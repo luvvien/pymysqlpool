@@ -28,9 +28,8 @@ class NoFreeConnectionError(Exception):
 
 
 class MySQLConnection(object):
-    def __init__(self, conn, is_free=True):
+    def __init__(self, conn):
         self.connection = conn
-        self.is_free = is_free
         self.last_activation_at = datetime.datetime.now()
 
     @property
@@ -44,7 +43,7 @@ class MySQLConnection(object):
         return getattr(self.connection, item)
 
     def __repr__(self):
-        return '<Connection item: {}, last_activation_at: {}>'.format(self.connection, self.last_activation_at)
+        return '<MySQLConnection: {}, last_activation_at: {}>'.format(self.connection, self.last_activation_at)
 
 
 class MySQLConnectionPool(object):
@@ -62,7 +61,8 @@ class MySQLConnectionPool(object):
         return cls.__instance[pool_name]
 
     def __init__(self, pool_name, host=None, user=None, password="", database=None, port=3306,
-                 charset='utf8', use_dict_cursor=True, max_pool_size=10, incremental_size=5, **kwargs):
+                 charset='utf8', use_dict_cursor=True, max_pool_size=5,
+                 incremental_size=2, wait_connection_timeout=60, **kwargs):
         """
         Initialize the connection pool.
 
@@ -76,6 +76,7 @@ class MySQLConnectionPool(object):
         :param use_dict_cursor: whether to use a dict cursor instead of a default one
         :param max_pool_size: maximum connection pool size
         :param incremental_size: increase `incremental_size` connections a time
+        :param wait_connection_timeout: wait how many seconds to get a free connection
         :param kwargs: other keyword arguments to be passed to `pymysql.Connection`
         """
         self._pool_name = pool_name
@@ -85,25 +86,28 @@ class MySQLConnectionPool(object):
         self._database = database
         self._port = port
         self._charset = charset
-        self.cursor_class = DictCursor if use_dict_cursor else Cursor
+        self._cursor_class = DictCursor if use_dict_cursor else Cursor
         self._max_pool_size = max_pool_size
         self._incremental_size = incremental_size
         self._other_kwargs = kwargs
-        self._lock = threading.RLock()
+        self.wait_connection_timeout = wait_connection_timeout
         self._connection_items = list()
-        self._connection_pool = queue.PriorityQueue(self._max_pool_size)
+        self._connection_pool = queue.Queue(self._max_pool_size)
+
+        self.__safe_lock = threading.RLock()
+        self.__is_killed = False
 
     def __repr__(self):
         return '<MySQLConnectionPool object at 0x{:0x}, ' \
                'name={!r}, size={!r}>'.format(id(self), self.pool_name, self.pool_size)
 
     def __enter__(self):
-        self.open()
-        return self.borrow_connection()
+        self.connect()
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_val:
-            logger.error(exc_tb)
+            logger.error(exc_tb, exc_info=True)
 
         self.close()
 
@@ -114,15 +118,37 @@ class MySQLConnectionPool(object):
         """Iterate each connection item"""
         return iter(self._connection_items)
 
-    def open(self):
-        """Open this connection pool"""
+    @property
+    def pool_name(self):
+        return self._pool_name
+
+    @property
+    def pool_size(self):
+        return len(self._connection_items)
+
+    @property
+    def active_connections_size(self):
+        return self._connection_pool.qsize()
+
+    def pool_cursor(self, use_dict_cursor=True):
+        cursor_class = DictCursor if use_dict_cursor else self._cursor_class
+        return PoolCursor(self, cursor_class)
+
+    def connect(self):
+        """Connect to this connection pool
+        """
         logger.info('[{}] open connection pool'.format(self.pool_name))
         self._add_connections()
 
     def close(self):
         """Close this connection pool"""
         logger.info('[{}] close connection pool'.format(self.pool_name))
-        self._free()
+        if self.__is_killed is True:
+            return
+
+        with self.__safe_lock:
+            self._free()
+            self.__is_killed = True
 
     def borrow_connection(self, wait_timeout=60):
         """
@@ -135,10 +161,13 @@ class MySQLConnectionPool(object):
             return conn_item
 
         if self.pool_size < self._max_pool_size:
+            logger.debug('[{}] expand connection pool, current size is {}'.format(self.pool_name, self.pool_size))
             self._add_connections()
             return self.borrow_connection(wait_timeout)
 
         # Otherwise, just wait a moment to get a free one
+        logger.debug('[{}] the connection pool is empty, you have to wait at most {} seconds to '
+                     'get a free connection'.format(self.pool_name, self.wait_connection_timeout))
         while wait_timeout:
             wait_timeout -= 1
             conn_item = self._get_free_connection()
@@ -150,7 +179,7 @@ class MySQLConnectionPool(object):
 
     def _get_free_connection(self):
         try:
-            conn_item = self._connection_pool.get_nowait()
+            conn_item = self._connection_pool.get(timeout=1)
         except queue.Empty:
             return None
         else:
@@ -159,16 +188,11 @@ class MySQLConnectionPool(object):
 
     def return_connection(self, conn_item):
         """Return a connection to the pool"""
-        logger.debug('[{}] return a connection item {}: {}'.format(self.pool_name, conn_item, self))
-        self._connection_pool.put_nowait(conn_item)
-
-    @property
-    def pool_name(self):
-        return self._pool_name
-
-    @property
-    def pool_size(self):
-        return len(self._connection_items)
+        try:
+            logger.debug('[{}] return a connection item: {}'.format(self.pool_name, conn_item))
+            self._connection_pool.put_nowait(conn_item)
+        except queue.Full:
+            logger.warning('[{}] failed to return connection item {}'.format(self.pool_name, conn_item))
 
     def _add_connections(self):
         """
@@ -179,13 +203,13 @@ class MySQLConnectionPool(object):
             try:
                 conn_item = self._create_connection()
                 self._connection_pool.put_nowait(conn_item)
-                with self._lock:
+                with self.__safe_lock:
                     self._connection_items.append(conn_item)
             except queue.Full:
                 logger.debug('Connection pool is full now')
                 break
             else:
-                logger.debug('Add new connection item: {}'.format(conn_item))
+                logger.debug('[{}] add a new connection item: {}'.format(self.pool_name, conn_item))
                 conn_item.connect()
 
     def _free(self):
@@ -195,8 +219,8 @@ class MySQLConnectionPool(object):
         for conn_item in self:
             try:
                 conn_item.close()
-            except Exception:
-                pass
+            except Exception as err:
+                _ = err
 
     def _create_connection(self):
         conn = Connection(self._host,
@@ -205,6 +229,6 @@ class MySQLConnectionPool(object):
                           self._database,
                           self._port,
                           charset=self._charset,
-                          cursorclass=self.cursor_class,
+                          cursorclass=self._cursor_class,
                           **self._other_kwargs)
         return MySQLConnection(conn)
