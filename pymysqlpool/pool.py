@@ -9,8 +9,11 @@
 import datetime
 import logging
 import queue
+
 import threading
 import time
+from collections import deque
+from itertools import chain
 
 from pymysql import Connection
 from pymysql.cursors import DictCursor, Cursor
@@ -28,8 +31,9 @@ class NoFreeConnectionError(Exception):
 
 
 class MySQLConnection(object):
-    def __init__(self, conn):
+    def __init__(self, conn, is_free):
         self.connection = conn
+        self.is_free = is_free
         self.last_activation_at = datetime.datetime.now()
 
     @property
@@ -40,10 +44,16 @@ class MySQLConnection(object):
         return self.last_activation_at < other.last_activation_at
 
     def __getattr__(self, item):
+        # dispatch other operations to pymysql connection
         return getattr(self.connection, item)
 
     def __repr__(self):
-        return '<MySQLConnection: {}, last_activation_at: {}>'.format(self.connection, self.last_activation_at)
+        return '<MySQLConnection at 0x{:0x}, free={}, last_activation_at={}>'.format(id(self), self.is_free,
+                                                                                     self.last_activation_at)
+
+
+class PoolContainer(object):
+    pass
 
 
 class MySQLConnectionPool(object):
@@ -79,7 +89,7 @@ class MySQLConnectionPool(object):
         :param wait_connection_timeout: wait how many seconds to get a free connection
         :param kwargs: other keyword arguments to be passed to `pymysql.Connection`
         """
-        self._pool_name = pool_name
+        # config for a database connection
         self._host = host
         self._user = user
         self._password = password
@@ -87,14 +97,21 @@ class MySQLConnectionPool(object):
         self._port = port
         self._charset = charset
         self._cursor_class = DictCursor if use_dict_cursor else Cursor
+        self._other_kwargs = kwargs
+
+        # config for the connection pool
+        self._pool_name = pool_name
         self._max_pool_size = max_pool_size
         self._incremental_size = incremental_size
-        self._other_kwargs = kwargs
         self.wait_connection_timeout = wait_connection_timeout
-        self._connection_items = list()
-        self._connection_pool = queue.Queue(self._max_pool_size)
 
-        self.__safe_lock = threading.RLock()
+        # containers for connection pool manager
+        self.__free_connections = deque()
+        self.__busy_connections = list()
+
+        # single lock is not enough, be aware of the dead lock issue
+        self.__pool_lock = threading.RLock()
+        self.__kill_lock = threading.RLock()
         self.__is_killed = False
 
     def __repr__(self):
@@ -116,7 +133,8 @@ class MySQLConnectionPool(object):
 
     def __iter__(self):
         """Iterate each connection item"""
-        return iter(self._connection_items)
+        with self.__pool_lock:
+            yield from chain(self.__free_connections, self.__busy_connections)
 
     @property
     def pool_name(self):
@@ -124,11 +142,13 @@ class MySQLConnectionPool(object):
 
     @property
     def pool_size(self):
-        return len(self._connection_items)
+        with self.__pool_lock:
+            return len(self.__free_connections + self.__busy_connections)
 
     @property
-    def active_connections_size(self):
-        return self._connection_pool.qsize()
+    def free_size(self):
+        with self.__pool_lock:
+            return len(self.__free_connections)
 
     def pool_cursor(self, use_dict_cursor=True):
         cursor_class = DictCursor if use_dict_cursor else self._cursor_class
@@ -143,10 +163,10 @@ class MySQLConnectionPool(object):
     def close(self):
         """Close this connection pool"""
         logger.info('[{}] close connection pool'.format(self.pool_name))
-        if self.__is_killed is True:
-            return
+        with self.__kill_lock:
+            if self.__is_killed is True:
+                return
 
-        with self.__safe_lock:
             self._free()
             self.__is_killed = True
 
@@ -178,27 +198,38 @@ class MySQLConnectionPool(object):
             raise NoFreeConnectionError('[{}] cannot find any free connection now'.format(self.pool_name))
 
     def _get_free_connection(self):
-        try:
-            conn_item = self._connection_pool.get(timeout=1)
-        except queue.Empty:
+        # check if we have any free connections
+        if self.free_size == 0:
             return None
-        else:
+
+        with self.__pool_lock:
+            conn_item = self.__free_connections.pop()
+            self.__busy_connections.append(conn_item)
+            conn_item.is_free = False
             conn_item.last_activation_at = datetime.datetime.now()
+            logger.debug('[{}] get free connection succeeded, '
+                         'current size is {}'.format(self.pool_name, (self.pool_size, self.free_size)))
             return conn_item
 
     def return_connection(self, conn_item):
         """Return a connection to the pool"""
-        try:
-            logger.debug('[{}] return a connection item: {}'.format(self.pool_name, conn_item))
-            self._connection_pool.put_nowait(conn_item)
-        except queue.Full:
+        if self.pool_size == self._max_pool_size:
             logger.warning('[{}] failed to return connection item {}'.format(self.pool_name, conn_item))
+            return False
+
+        logger.debug('[{}] return a connection item: {}'.format(self.pool_name, conn_item))
+        with self.__pool_lock:
+            self.__busy_connections.remove(conn_item)
+            conn_item.is_free = True
+            self.__free_connections.appendleft(conn_item)
+            logger.debug('[{}] return connection succeeded, '
+                         'current size is: {}'.format(self.pool_name, (self.pool_size, self.free_size)))
 
     def _add_connections(self):
         """
         Initialize the connection pool, create several connections here.
         """
-        # Create several connections
+        # Create several new connections
         for i in range(self._incremental_size):
             try:
                 conn_item = self._create_connection()
