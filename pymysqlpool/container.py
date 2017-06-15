@@ -34,11 +34,11 @@ class PoolContainer(object):
         with self._pool_lock:
             yield from chain(self._busy_items, self._free_items)
 
-    def return_item(self, item):
+    def add(self, item):
         with self._pool_lock:
             pass
 
-    def borrow_item(self, wait_timeout):
+    def get(self, wait_timeout):
         with self._pool_lock:
             pass
 
