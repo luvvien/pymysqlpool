@@ -1,14 +1,14 @@
 # -*-coding: utf-8-*-
 # Author : Christopher Lee
-# License: Apache License
+# License: MIT License
 # File   : conn.py
 # Date   : 2017-06-15 14-09
-# Version: 0.0.1
+# Version: 0.1
 # Description: pool cursor class
 
 import logging
 
-__version__ = '0.0.1'
+__version__ = '0.1'
 __author__ = 'Chris'
 
 logger = logging.getLogger('pymysqlpool')

@@ -1,9 +1,9 @@
 # -*-coding: utf-8-*-
 # Author : Christopher Lee
-# License: Apache License
+# License: MIT License
 # File   : container.py
 # Date   : 2017-06-16 07-12
-# Version: 0.0.1
+# Version: 0.1
 # Description: pool container, thread-safe
 
 
@@ -11,7 +11,7 @@ import logging
 import threading
 from queue import Queue, Empty
 
-__version__ = '0.0.1'
+__version__ = '0.1'
 __author__ = 'Chris'
 
 logger = logging.getLogger('pymysqlpool')
@@ -106,7 +106,6 @@ class PoolContainer(object):
         except Empty:
             raise PoolIsEmptyException('Cannot find any available item')
         else:
-            print('借到：{}'.format(self._pool_items.index(item)))
             logger.debug('Get item "{}",'
                          ' current size is "{}"'.format(item, (self.pool_size, self.free_size, self.max_pool_size)))
             return item

@@ -1,9 +1,9 @@
 # -*-coding: utf-8-*-
 # Author : Christopher Lee
-# License: Apache License
+# License: MIT License
 # File   : test_pool.py
 # Date   : 2017-06-15 15-05
-# Version: 0.0.1
+# Version: 0.1
 # Description: description of this file.
 
 
@@ -25,7 +25,7 @@ config = {
     'host': 'localhost',
     'port': 3306,
     'user': 'root',
-    'password': 'chris',
+    'password': 'chri',
     'database': 'yunos_new',
     # 'pool_resize_boundary': 30,
     # 'wait_timeout': 120,
@@ -50,8 +50,8 @@ def test_insert_one():
         name = name_factory()
         result = cursor.execute_one(insert_sql,
                                     ('folder_{}'.format(name), 'icon_{}.png'.format(name), datetime.datetime.now()))
-        # print(result)
-        _ = result
+        print(result)
+        # _ = result
         # print(cursor.connection)
         # time.sleep(.1)
 
@@ -117,9 +117,9 @@ if __name__ == '__main__':
     start = time.time()
     # test_insert_many()
     # test_query()
-    # test_insert_one()
+    test_insert_one()
     # test_with_multi_threading()
-    test_single_thread_insert()
+    # test_single_thread_insert()
     # test_borrow_connections()
     # test_borrow_return_connections()
     print('Time consuming is {}'.format(time.time() - start))

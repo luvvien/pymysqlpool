@@ -67,6 +67,11 @@ with conn_pool.pool_cursor() as cursor:
     
     for user in cursor.query('SELECT * FROM user'):
         print(user)
+        
+# 不使用上下文管理器
+cursor = conn_pool.pool_cursor()
+result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
+cursor.close()
 ```
 
 # 性能测试

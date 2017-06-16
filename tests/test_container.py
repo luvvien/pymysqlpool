@@ -1,9 +1,9 @@
 # -*-coding: utf-8-*-
 # Author : Christopher Lee
-# License: Apache License
+# License: MIT License
 # File   : test_container.py
 # Date   : 2017-06-16 09-22
-# Version: 0.0.1
+# Version: 0.1
 # Description: description of this file.
 
 import random

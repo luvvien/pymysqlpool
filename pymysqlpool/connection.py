@@ -1,9 +1,9 @@
 # -*-coding: utf-8-*-
 # Author : Christopher Lee
-# License: Apache License
+# License: MIT License
 # File   : pool.py
 # Date   : 2017-06-15 14-09
-# Version: 0.0.1
+# Version: 0.1
 # Description: connection pool manager.
 
 import logging
@@ -15,7 +15,7 @@ from pymysql.cursors import DictCursor, Cursor
 from pymysqlpool.cursor import PoolCursor
 from pymysqlpool.pool import PoolContainer, PoolIsFullException, PoolIsEmptyException
 
-__version__ = '0.0.1'
+__version__ = '0.1'
 __author__ = 'Chris'
 
 logger = logging.getLogger('pymysqlpool')
@@ -153,7 +153,15 @@ class MySQLConnectionPool(object):
         """Connect to this connection pool
         """
         logger.info('[{}] Connect to connection pool'.format(self.pool_name))
-        self._extend_connection_pool()
+        test_conn = self._create_connection()
+        try:
+            test_conn.ping()
+        except Exception as err:
+            raise err
+        else:
+            self._extend_connection_pool()
+        finally:
+            test_conn.close()
 
     def close(self):
         """Close this connection pool"""
