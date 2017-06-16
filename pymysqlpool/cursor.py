@@ -13,16 +13,23 @@ __author__ = 'Chris'
 
 logger = logging.getLogger('pymysqlpool')
 
+__all__ = ['PoolCursor']
+
 
 class PoolCursor(object):
-    """Cursor class, execute sql expressions here
+    """Cursor class, execute sql expressions here.
+
+    Possible usage (not recommended usage on the client side!):
+    with PoolCursor(conn_pool, DictCursor) as cursor:
+        cursor.execute_one(sql, args)
+        cursor.execute_many(sql, args)
+        cursor.query(sql, args)
     """
 
     def __init__(self, conn_pool, cursor_class):
         self._conn_pool = conn_pool
         self._conn = None
         self._cursor_class = cursor_class
-        self._last_row_id = 0
 
     def __repr__(self):
         return '<PoolCursor object at 0x{:0x}, connection is {}>'.format(id(self), self.connection)
@@ -32,38 +39,42 @@ class PoolCursor(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_tb:
-            logger.error(exc_tb)
+            logger.error(exc_tb, exc_info=True)
+            self.connection.rollback()
+        else:
+            self.connection.commit()
 
         self.close()
 
     def close(self):
-        if self._conn:
-            self._conn_pool.return_connection(self.connection)
-
-    @property
-    def last_row_id(self):
-        return self._last_row_id
+        self._conn_pool.return_connection(self.connection)
 
     @property
     def connection(self):
         if self._conn is None:
-            self._conn = self._conn_pool.borrow_connection(self._conn_pool.wait_connection_timeout)
+            self._conn = self._conn_pool.borrow_connection()
+
         return self._conn
 
     def execute_one(self, sql, args=None):
+        """
+        Execute one sql expression, return a tuple: (affected_results, lastrowid)
+        """
         try:
             with self.connection.cursor(self._cursor_class) as cursor:
                 logger.debug('[{}][execute_one] sql: "{}"'.format(self._conn_pool.pool_name, cursor.mogrify(sql, args)))
                 result = cursor.execute(sql, args)
-
-            self.connection.commit()
-            self._last_row_id = cursor.lastrowid
-            return result
         except Exception as err:
             logger.error(err, exc_info=True)
             self.connection.rollback()
+        else:
+            self.connection.commit()
+            return result, cursor.lastrowid
 
     def execute_many(self, sql, args):
+        """
+        Execute many, return a tuple: (affected_results, lastrowid)
+        """
         try:
             with self.connection.cursor(self._cursor_class) as cursor:
                 logger.debug(
@@ -71,19 +82,18 @@ class PoolCursor(object):
                 result = cursor.executemany(sql, args)
 
             self.connection.commit()
-            self._last_row_id = cursor.lastrowid + result - 1
-            return result
+            return result, result + cursor.lastrowid - 1
         except Exception as err:
             logger.error(err, exc_info=True)
             self.connection.rollback()
 
     def query(self, sql, args=None):
+        """Return a generator for lazy loading"""
         try:
             with self.connection.cursor(self._cursor_class) as cursor:
                 logger.debug('[{}][query] sql: "{}"'.format(self._conn_pool.pool_name, cursor.mogrify(sql, args)))
                 cursor.execute(sql, args)
                 yield from cursor
-
         except Exception as err:
             logger.error(err, exc_info=True)
             self.connection.rollback()
