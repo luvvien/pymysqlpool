@@ -25,7 +25,7 @@ config = {
     'host': 'localhost',
     'port': 3306,
     'user': 'root',
-    'password': 'chri',
+    'password': 'chris',
     'database': 'yunos_new',
     # 'pool_resize_boundary': 30,
     # 'wait_timeout': 120,
@@ -46,7 +46,7 @@ name_factory = lambda: ''.join(random.sample(string.ascii_letters, random.randin
 
 
 def test_insert_one():
-    with conn_pool.pool_cursor() as cursor:
+    with conn_pool.cursor() as cursor:
         name = name_factory()
         result = cursor.execute_one(insert_sql,
                                     ('folder_{}'.format(name), 'icon_{}.png'.format(name), datetime.datetime.now()))
@@ -57,7 +57,7 @@ def test_insert_one():
 
 
 def test_insert_many():
-    with conn_pool.pool_cursor() as cursor:
+    with conn_pool.cursor() as cursor:
         folders = []
 
         for _ in range(10):
@@ -68,14 +68,14 @@ def test_insert_many():
 
 
 def test_query():
-    with conn_pool.pool_cursor() as cursor:
+    with conn_pool.cursor() as cursor:
         for item in sorted(cursor.query(select_sql), key=lambda x: x['id']):
             print(item)
             # _ = item
 
 
 def test_truncate():
-    with conn_pool.pool_cursor() as cursor:
+    with conn_pool.cursor() as cursor:
         cursor.execute_one(truncate_sql)
 
 
@@ -93,13 +93,13 @@ def test_with_multi_threading():
 
 def test_borrow_connections():
     for _ in range(11):
-        # with conn_pool.pool_cursor() as c:
-        print(conn_pool.pool_cursor().connection)
+        # with conn_pool.cursor() as c:
+        print(conn_pool.cursor().connection)
 
 
 def test_borrow_return_connections():
     for _ in range(1000):
-        with conn_pool.pool_cursor() as cursor:
+        with conn_pool.cursor() as cursor:
             print(cursor.connection)
 
 
@@ -111,13 +111,22 @@ def test_single_thread_insert():
     test_query()
 
 
+def test_query_with_pandas():
+    import pandas as pd
+
+    with conn_pool.connection() as conn:
+        r = pd.read_sql(select_sql, conn)
+        print(r)
+
+
 if __name__ == '__main__':
     import time
 
     start = time.time()
     # test_insert_many()
     # test_query()
-    test_insert_one()
+    # test_insert_one()
+    test_query_with_pandas()
     # test_with_multi_threading()
     # test_single_thread_insert()
     # test_borrow_connections()

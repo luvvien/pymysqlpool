@@ -8,6 +8,6 @@ setup(
     license='MIT',
     author='Christopher Lee',
     author_email='',
-    requires=['pymysql'],
+    requires=['pymysql', 'pandas'],
     description='MySQL connection pool utility.'
 )

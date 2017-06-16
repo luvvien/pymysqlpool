@@ -8,6 +8,7 @@
 
 import logging
 import threading
+import contextlib
 
 from pymysql import Connection
 from pymysql.cursors import DictCursor, Cursor
@@ -38,7 +39,7 @@ class MySQLConnectionPool(object):
     Typical usage are as follows:
     1. normal usage:
         >>> pool = MySQLConnectionPool('test_pool', 'localhost', 'username', 'password', 'database', max_pool_size=10)
-        >>> with pool.pool_cursor() as cursor:
+        >>> with pool.cursor() as cursor:
         >>>     cursor.execute_one('INSERT INTO user (name, password) VALUES (%s, %s)', ('chris', 'password'))
         >>>     cursor.execute_many('INSERT INTO user (name, password) VALUES (%s, %s)', [('chris', 'password'), ('chris', 'password')])
         >>>     print(list(cursor.query('SELECT * FROM user')))
@@ -145,9 +146,17 @@ class MySQLConnectionPool(object):
     def free_size(self):
         return self._pool_container.free_size
 
-    def pool_cursor(self, use_dict_cursor=True):
+    def cursor(self, use_dict_cursor=True):
         cursor_class = DictCursor if use_dict_cursor else self._cursor_class
         return PoolCursor(self, cursor_class)
+
+    @contextlib.contextmanager
+    def connection(self):
+        conn = self.borrow_connection()
+        try:
+            yield conn
+        finally:
+            self.return_connection(conn)
 
     def connect(self):
         """Connect to this connection pool

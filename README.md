@@ -43,9 +43,45 @@ new_connection => [connection pool] => old_connection
 
 # 使用示例
 
-```python
-from pymysqlpool import MySQLConnectionPool
+1. 常规用法：
 
+    ```python
+    from pymysqlpool import MySQLConnectionPool
+    
+    config = {
+        'pool_name': 'test',
+        'host': 'localhost',
+        'port': 3306,
+        'user': 'root',
+        'password': 'root',
+        'database': 'test'
+    }
+    
+    conn_pool = MySQLConnectionPool(**config)
+    conn_pool.connect()
+    with conn_pool.cursor() as cursor:
+        result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
+        print(result)
+        
+        users = [(name, age) for name in ['a', 'b', 'c'] for age in range(10, 30)]
+        result = cursor.execute_many('INSERT INTO user (name, age) VALUES (%s, %s)', users)
+        print(result)
+        
+        for user in cursor.query('SELECT * FROM user'):
+            print(user)
+            
+    # 不使用上下文管理器
+    cursor = conn_pool.cursor()
+    result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
+    cursor.close()
+    ```
+
+1. 直接使用 `pool_connection`，可以直接访问一个 `pymysql.Connection` 对象：
+
+```python
+import pandas as pd
+from pymysqlpool import MySQLConnectionPool
+    
 config = {
     'pool_name': 'test',
     'host': 'localhost',
@@ -54,24 +90,17 @@ config = {
     'password': 'root',
     'database': 'test'
 }
-
+    
 conn_pool = MySQLConnectionPool(**config)
 conn_pool.connect()
-with conn_pool.pool_cursor() as cursor:
-    result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
-    print(result)
+
+with conn_pool.pool_connection() as conn:
+    pd.read_sql('SELECT * FROM user', conn)
     
-    users = [(name, age) for name in ['a', 'b', 'c'] for age in range(10, 30)]
-    result = cursor.execute_many('INSERT INTO user (name, age) VALUES (%s, %s)', users)
-    print(result)
-    
-    for user in cursor.query('SELECT * FROM user'):
-        print(user)
-        
-# 不使用上下文管理器
-cursor = conn_pool.pool_cursor()
-result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
-cursor.close()
+# 或者
+connection = conn_pool.borrow_connection()
+pd.read_sql('SELECT * FROM user', conn)
+conn_pool.return_connection(connection)
 ```
 
 # 性能测试
