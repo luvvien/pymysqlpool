@@ -37,25 +37,13 @@ class MySQLConnectionPool(object):
     A connection pool manager.
 
     Typical usage are as follows:
-    1. normal usage:
+    Typical usage:
         >>> pool = MySQLConnectionPool('test_pool', 'localhost', 'username', 'password', 'database', max_pool_size=10)
         >>> with pool.cursor() as cursor:
         >>>     cursor.execute_one('INSERT INTO user (name, password) VALUES (%s, %s)', ('chris', 'password'))
         >>>     cursor.execute_many('INSERT INTO user (name, password) VALUES (%s, %s)', [('chris', 'password'), ('chris', 'password')])
         >>>     print(list(cursor.query('SELECT * FROM user')))
     """
-    __instance = {}
-
-    def __new__(cls, *args, **kwargs):
-        """To create an singleton instance"""
-        try:
-            pool_name = args[0]
-        except IndexError:
-            pool_name = kwargs['pool_name']
-
-        if pool_name not in cls.__instance:
-            cls.__instance[pool_name] = object.__new__(cls)
-        return cls.__instance[pool_name]
 
     def __init__(self, pool_name, host=None, user=None, password="", database=None, port=3306,
                  charset='utf8', use_dict_cursor=True, max_pool_size=16,
@@ -107,6 +95,7 @@ class MySQLConnectionPool(object):
 
         self.__safe_lock = threading.RLock()
         self.__is_killed = False
+        self.__is_connected = False
 
     def __repr__(self):
         return '<MySQLConnectionPool object at 0x{:0x}, ' \
@@ -161,13 +150,20 @@ class MySQLConnectionPool(object):
     def connect(self):
         """Connect to this connection pool
         """
+        if self.__is_connected:
+            return
+
         logger.info('[{}] Connect to connection pool'.format(self.pool_name))
+
         test_conn = self._create_connection()
         try:
             test_conn.ping()
         except Exception as err:
             raise err
         else:
+            with self.__safe_lock:
+                self.__is_connected = True
+
             self._extend_connection_pool()
         finally:
             test_conn.close()
