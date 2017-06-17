@@ -63,8 +63,11 @@
         'database': 'test'
     }
     
-    conn_pool = ConnectionPool(**config)
-    conn_pool.connect()
+    def connection_pool():
+        # Return a connection pool instance
+        pool = ConnectionPool(**config)
+        pool.connect()
+        return pool
 
     # 直接访问并获取一个 cursor 对象，自动 commit 模式会在这种方式下启用
     with connection_pool().cursor() as cursor:
@@ -110,16 +113,19 @@
         'database': 'test'
     }
 
-    conn_pool = ConnectionPool(**config)
-    conn_pool.connect()
+    def connection_pool():
+        # Return a connection pool instance
+        pool = ConnectionPool(**config)
+        pool.connect()
+        return pool
 
-    with conn_pool.connection() as conn:
+    with connection_pool().connection() as conn:
         pd.read_sql('SELECT * FROM user', conn)
 
     # 或者
-    connection = conn_pool.borrow_connection()
+    connection = connection_pool().borrow_connection()
     pd.read_sql('SELECT * FROM user', conn)
-    conn_pool.return_connection(connection)
+    connection_pool().return_connection(connection)
     ```
 
 1. 更多测试请移步 [test_example.py](https://github.com/ChrisLeeGit/pymysqlpool/blob/master/tests/test_example.py)。
