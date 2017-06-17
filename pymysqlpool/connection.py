@@ -87,7 +87,8 @@ class MySQLConnectionPool(object):
         self._enable_auto_resize = enable_auto_resize
         self._pool_resize_boundary = pool_resize_boundary
         if auto_resize_scale < 1:
-            raise ValueError("Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
+            raise ValueError(
+                "Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
 
         self._auto_resize_scale = int(round(auto_resize_scale, 0))
         self.wait_timeout = wait_timeout
@@ -99,7 +100,8 @@ class MySQLConnectionPool(object):
 
     def __repr__(self):
         return '<MySQLConnectionPool object at 0x{:0x}, ' \
-               'name={!r}, size={!r}>'.format(id(self), self.pool_name, (self.pool_size, self.free_size))
+               'name={!r}, size={!r}>'.format(
+                   id(self), self.pool_name, (self.pool_size, self.free_size))
 
     def __enter__(self):
         self.connect()
@@ -245,9 +247,11 @@ class MySQLConnectionPool(object):
             try:
                 self._pool_container.add(conn_item)
             except PoolIsFullException:
-                logger.debug('[{}] Connection pool is full now'.format(self.pool_name))
+                logger.debug(
+                    '[{}] Connection pool is full now'.format(self.pool_name))
                 if self.pool_size > self._pool_resize_boundary:
-                    raise PoolBoundaryExceedsError('Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
+                    raise PoolBoundaryExceedsError(
+                        'Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
                 else:
                     break
 

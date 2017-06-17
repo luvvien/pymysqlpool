@@ -36,7 +36,8 @@ class PoolContainer(object):
     def __init__(self, max_pool_size):
         self._pool_lock = threading.RLock()
         self._free_items = Queue()
-        self._pool_items = list()
+        # self._pool_items = list()
+        self._pool_items = set()
         self.max_pool_size = max_pool_size
 
     def __repr__(self):
@@ -48,11 +49,8 @@ class PoolContainer(object):
             return iter(self._pool_items)
 
     def __contains__(self, item):
-        for existing_item in self:
-            if existing_item == item:
-                return True
-        else:
-            return False
+        with self._pool_lock:
+            return item in self._pool_items
 
     def __len__(self):
         with self._pool_lock:
@@ -75,7 +73,8 @@ class PoolContainer(object):
 
         self._free_items.put_nowait(item)
         with self._pool_lock:
-            self._pool_items.append(item)
+            # self._pool_items.append(item)
+            self._pool_items.add(item)
 
         logger.debug(
             'Added a new item "{!r}",'
@@ -87,7 +86,8 @@ class PoolContainer(object):
             return False
 
         if item not in self:
-            logger.error('Current pool dose not contain item: "{}"'.format(item))
+            logger.error(
+                'Current pool dose not contain item: "{}"'.format(item))
             return False
 
         self._free_items.put_nowait(item)
@@ -102,7 +102,7 @@ class PoolContainer(object):
         If `wait_timeout` is None, it will block forever until a free item is found.
         """
         try:
-            item = self._free_items.get(block=block, timeout=wait_timeout)
+            item = self._free_items.get(block, timeout=wait_timeout)
         except Empty:
             raise PoolIsEmptyException('Cannot find any available item')
         else:

@@ -32,7 +32,8 @@ class PoolCursor(object):
         self._cursor_class = cursor_class
 
     def __repr__(self):
-        return '<PoolCursor object at 0x{:0x}, connection is {}>'.format(id(self), self.connection)
+        return '<PoolCursor object at 0x{:0x}, connection is {}>'.format(
+            id(self), self.connection)
 
     def __enter__(self):
         return self
@@ -62,7 +63,11 @@ class PoolCursor(object):
         """
         try:
             with self.connection.cursor(self._cursor_class) as cursor:
-                logger.debug('[{}][execute_one] sql: "{}"'.format(self._conn_pool.pool_name, cursor.mogrify(sql, args)))
+                logger.debug(
+                    '[{}][execute_one] sql: "{}"'.format(
+                        self._conn_pool.pool_name,
+                        cursor.mogrify(sql, args)))
+
                 result = cursor.execute(sql, args)
         except Exception as err:
             logger.error(err, exc_info=True)
@@ -91,7 +96,12 @@ class PoolCursor(object):
         """Return a generator for lazy loading"""
         try:
             with self.connection.cursor(self._cursor_class) as cursor:
-                logger.debug('[{}][query] sql: "{}"'.format(self._conn_pool.pool_name, cursor.mogrify(sql, args)))
+                logger.debug(
+                    '[{}][query] sql: "{}"'.format(
+                        self._conn_pool.pool_name,
+                        cursor.mogrify(
+                            sql,
+                            args)))
                 cursor.execute(sql, args)
                 yield from cursor
         except Exception as err:
@@ -103,7 +113,9 @@ class PoolCursor(object):
         ((sql1, args1), (sql2, args2))...
         """
         try:
-            logger.info("[{}][transact] start transaction".format(self._conn_pool.pool_name))
+            logger.info(
+                "[{}][transact] start transaction".format(
+                    self._conn_pool.pool_name))
             self.connection.begin()
 
             with self.connection.cursor(self._cursor_class) as cursor:

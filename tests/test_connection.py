@@ -18,7 +18,7 @@ from pymysqlpool import create_connection_pool
 
 logging.basicConfig(format='[%(asctime)s][%(name)s][%(module)s.%(lineno)d][%(levelname)s] %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.DEBUG)
+                    level=logging.ERROR)
 
 config = {
     'pool_name': 'test',
@@ -27,7 +27,8 @@ config = {
     'user': 'root',
     'password': 'chris',
     'database': 'test',
-    # 'pool_resize_boundary': 30,
+    'pool_resize_boundary': 50,
+    'step_size': 10,
     # 'wait_timeout': 120,
     'enable_auto_resize': True,
     # 'max_pool_size': 10
@@ -38,7 +39,7 @@ def conn_pool():
     # pool = MySQLConnectionPool(**config)
     pool = create_connection_pool(**config)
     pool.connect()
-    print(pool)
+    # print(pool)
     return pool
 
 
@@ -56,7 +57,7 @@ def test_insert_one():
         name = name_factory()
         result = cursor.execute_one(insert_sql,
                                     ('folder_{}'.format(name), 'icon_{}.png'.format(name), datetime.datetime.now()))
-        print(result)
+        # print(result)
         # _ = result
         # print(cursor.connection)
         # time.sleep(.1)
@@ -89,10 +90,11 @@ def test_with_multi_threading():
     test_truncate()
 
     def task(n):
+        print('In thread {}'.format(threading.get_ident()))
         for _ in range(n):
             test_insert_one()
 
-    threads = [threading.Thread(target=task, args=(1000, )) for _ in range(100)]
+    threads = [threading.Thread(target=task, args=(2000,)) for _ in range(50)]
     for t in threads:
         t.start()
 
@@ -102,21 +104,17 @@ def test_with_multi_threading():
     test_query()
 
 
-def test_borrow_connections():
-    for _ in range(11):
-        # with conn_pool.cursor() as c:
-        print(conn_pool().cursor().connection)
-
-
 def test_borrow_return_connections():
-    for _ in range(1000):
-        with conn_pool().cursor() as cursor:
-            print(cursor.connection)
+    for _ in range(100000):
+        with conn_pool().connection() as connection:
+            _ = connection
 
 
 def test_single_thread_insert():
+    # with ping: 11s
+    # without ping 11s
     test_truncate()
-    for _ in range(5000):
+    for _ in range(100000):
         test_insert_one()
 
     test_query()
@@ -134,12 +132,11 @@ if __name__ == '__main__':
     import time
 
     start = time.time()
-    test_insert_many()
-    test_query()
-    test_insert_one()
-    test_query_with_pandas()
-    test_with_multi_threading()
+    # test_insert_many()
+    # test_query()
+    # test_insert_one()
+    # test_query_with_pandas()
+    # test_with_multi_threading()
     test_single_thread_insert()
-    test_borrow_connections()
-    test_borrow_return_connections()
+    # test_borrow_return_connections()
     print('Time consuming is {}'.format(time.time() - start))

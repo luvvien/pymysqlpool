@@ -17,6 +17,3 @@ def create_connection_pool(*args, **kwargs):
         from .connection import MySQLConnectionPool
         _instances[pool_name] = MySQLConnectionPool(*args, **kwargs)
     return _instances[pool_name]
-
-
-
