@@ -1,26 +1,32 @@
 # MySQL 数据库连接池组件
 
-`pymysqlpool` 是数据库工具包中新成员，目的是能提供一个实用的数据库连接池中间件，从而避免在应用中频繁地创建和释放数据库连接资源，导致在执行 SQL 时效率降低。
+[pymysqlpool]() 是数据库工具包中新成员，目的是能提供一个实用的数据库连接池中间件，从而避免在应用中频繁地创建和释放数据库连接资源。
 
 # 功能
 
-0. 连接池本身是线程安全的，可在多线程环境下使用，不必担心连接资源被多个线程共享的问题；
-1. 提供尽可能紧凑的接口用于数据库操作；
-2. 连接池的管理位于包内完成，客户端只需要提交 SQL 请求，并等待结果即可；
-3. 将最大程度地与 `dataobj` 等兼容，便于使用；
-4. 连接池本身具备动态增加连接数的功能，即 `max_pool_size` 和 `step_size` 会用于控制每次增加的连接数和最大连接数；
-5. 连接池最大连接数亦动态增加，需要开启 `enable_auto_resize` 开关，此后当任何一次连接获取超时发生，均记为一次惩罚，并且将 `max_pool_size` 扩大一定倍数。
+1. 连接池本身是线程安全的，可在多线程环境下使用，不必担心连接资源被多个线程共享的问题；
+2. 提供尽可能紧凑的接口用于数据库操作；
+3. 连接池的管理位于包内完成，客户端可以通过接口获取池中的连接资源（返回 `pymysql.Connection`）；
+4. 将最大程度地与 dataobj 等兼容，便于使用；
+5. 连接池本身具备动态增加连接数的功能，即 `max_pool_size` 和 `step_size` 会用于控制每次增加的连接数和最大连接数；
+6. 连接池最大连接数亦动态增加，需要开启 `enable_auto_resize` 开关，此后当任何一次连接获取超时发生，均记为一次惩罚，并且将 `max_pool_size` 扩大一定倍数。
 
 # 基本工作流程
 
+**注意，当多线程同时请求时，若池中没有可用的连接对象，则需要排队等待**
+
 1. 初始化后优先创建 `step_size` 个连接对象，放在连接池中；
-1. 客户端发送 SQL 执行请求，`PoolCursor` 会在执行 SQL 前从连接池中请求一个可用的连接；
-1. 当请求连接对象成功后，开始执行 SQL；如果请求失败，则会尝试等待片刻，并根据需要扩展连接池对象；直到排队等到空闲连接对象时，才会执行后续的 SQL；
-1. 执行完毕后，cursor 对象会将使用的连接对象返还给连接池；
-1. 当进程结束时，连接池会自动释放所有连接对象。
+1. 客户端请求连接对象，连接池会从中挑选最近没使用的连接对象返回（同时会检查连接是否正常）；
+1. 客户端使用连接对象，执行相应操作后，调用接口返回连接对象；
+1. 连接池回收连接对象，并将其加入池中的队列，供其它请求使用。
+
 
 ```
-new_connection => [connection pool] => old_connection
+|--------|                                |--------------|
+|        | <==borrow connection object==  | Pool manager |
+| Client |                                |              |
+|        | ==return connection object==>  |  FIFO queue  |
+|--------|                                |--------------|
 ```
 
 # 参数配置
@@ -43,10 +49,10 @@ new_connection => [connection pool] => old_connection
 
 # 使用示例
 
-1. 常规用法：
+1. 使用 `cursor` 上下文管理器（快捷方式，但每次获取都会申请连接对象，多次调用效率不高）：
 
     ```python
-    from pymysqlpool.connection import MySQLConnectionPool
+    from pymysqlpool import ConnectionPool
     
     config = {
         'pool_name': 'test',
@@ -57,31 +63,43 @@ new_connection => [connection pool] => old_connection
         'database': 'test'
     }
     
-    conn_pool = MySQLConnectionPool(**config)
+    conn_pool = ConnectionPool(**config)
     conn_pool.connect()
-    with conn_pool.cursor() as cursor:
-        result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
+
+    # 直接访问并获取一个 cursor 对象，自动 commit 模式会在这种方式下启用
+    with connection_pool().cursor() as cursor:
+        print('Truncate table user')
+        cursor.execute('TRUNCATE user')
+
+        print('Insert one record')
+        result = cursor.execute('INSERT INTO user (name, age) VALUES (%s, %s)', ('Jerry', 20))
+        print(result, cursor.lastrowid)
+
+        print('Insert multiple records')
+        users = [(name, age) for name in ['Jacky', 'Mary', 'Micheal'] for age in range(10, 15)]
+        result = cursor.executemany('INSERT INTO user (name, age) VALUES (%s, %s)', users)
         print(result)
-        
-        users = [(name, age) for name in ['a', 'b', 'c'] for age in range(10, 30)]
-        result = cursor.execute_many('INSERT INTO user (name, age) VALUES (%s, %s)', users)
-        print(result)
-        
-        for user in cursor.query('SELECT * FROM user'):
+
+        print('View items in table user')
+        cursor.execute('SELECT * FROM user')
+        for user in cursor:
             print(user)
-            
-    # 不使用上下文管理器
-    cursor = conn_pool.cursor()
-    result = cursor.execute_one('INSERT INTO user (name, age) VALUES (%s, %s)', ('test', 20))
-    cursor.close()
+
+        print('Update the name of one user in the table')
+        cursor.execute('UPDATE user SET name="Chris", age=29 WHERE id = 16')
+        cursor.execute('SELECT * FROM user ORDER BY id DESC LIMIT 1')
+        print(cursor.fetchone())
+
+        print('Delete the last record')
+        cursor.execute('DELETE FROM user WHERE id = 16')
     ```
 
-1. 直接使用 `connection`，可以直接访问一个 `pymysql.Connection` 对象：
+1. 使用 `connection` 上下文管理器：
 
 
     ```python
     import pandas as pd
-    from pymysqlpool.connection import MySQLConnectionPool
+    from pymysqlpool import ConnectionPool
 
     config = {
         'pool_name': 'test',
@@ -92,7 +110,7 @@ new_connection => [connection pool] => old_connection
         'database': 'test'
     }
 
-    conn_pool = MySQLConnectionPool(**config)
+    conn_pool = ConnectionPool(**config)
     conn_pool.connect()
 
     with conn_pool.connection() as conn:
@@ -104,24 +122,18 @@ new_connection => [connection pool] => old_connection
     conn_pool.return_connection(connection)
     ```
 
-1. 使用连接池工厂创建单例连接池对象：
-
-
-    ```
-    from pymysqlpool import create_connection_pool
-    pool = create_connection_pool(**config)
-    pool.connect()
-    ```
-
-# 性能测试
-
-1. 相对于旧版每次执行 SQL 都经历连接和关闭过程的方式，基于连接池的机制在多线程执行 SQL 下性能提升一倍；
-1. 在单线程下，执行 10000 条 SQL 测试，新版性能提升约 3 倍。
+1. 更多测试请移步 [test_example.py]()。
 
 # 依赖
-1. `pymysql`：将依赖该工具包完成数据库的连接等操作。
+1. `pymysql`：将依赖该工具包完成数据库的连接等操作；
+1. `pandas`：测试时使用了 pandas。
 
 # 日志
+
+## 2017.06.18 周日
+1. 移除多余的`cursor`模块，充分利用 `pymysql.cursor`；
+1. 重构部分模块，同时添加新的测试。
+
 ## 2017.06.17 周六
 1. 更新连接池工厂函数，替换不正确的命名方式；
 1. 添加新的测试和示例。
@@ -131,4 +143,4 @@ new_connection => [connection pool] => old_connection
 1. 提供第一个可供测试的版本，并完成基本的测试。
 
 ## 2017.06.15 周四
-1. 初步完成连接池的编写
+1. 初步完成连接池的编写。

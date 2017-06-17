@@ -10,10 +10,9 @@ import logging
 import threading
 import contextlib
 
-from pymysql import Connection
+from pymysql.connections import Connection
 from pymysql.cursors import DictCursor, Cursor
 
-from pymysqlpool.cursor import PoolCursor
 from pymysqlpool.pool import PoolContainer, PoolIsFullException, PoolIsEmptyException
 
 __version__ = '0.1'
@@ -38,11 +37,6 @@ class MySQLConnectionPool(object):
 
     Typical usage are as follows:
     Typical usage:
-        >>> pool = MySQLConnectionPool('test_pool', 'localhost', 'username', 'password', 'database', max_pool_size=10)
-        >>> with pool.cursor() as cursor:
-        >>>     cursor.execute_one('INSERT INTO user (name, password) VALUES (%s, %s)', ('chris', 'password'))
-        >>>     cursor.execute_many('INSERT INTO user (name, password) VALUES (%s, %s)', [('chris', 'password'), ('chris', 'password')])
-        >>>     print(list(cursor.query('SELECT * FROM user')))
     """
 
     def __init__(self, pool_name, host=None, user=None, password="", database=None, port=3306,
@@ -87,7 +81,8 @@ class MySQLConnectionPool(object):
         self._enable_auto_resize = enable_auto_resize
         self._pool_resize_boundary = pool_resize_boundary
         if auto_resize_scale < 1:
-            raise ValueError("Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
+            raise ValueError(
+                "Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
 
         self._auto_resize_scale = int(round(auto_resize_scale, 0))
         self.wait_timeout = wait_timeout
@@ -100,21 +95,6 @@ class MySQLConnectionPool(object):
     def __repr__(self):
         return '<MySQLConnectionPool object at 0x{:0x}, ' \
                'name={!r}, size={!r}>'.format(id(self), self.pool_name, (self.pool_size, self.free_size))
-
-    def __enter__(self):
-        self.connect()
-        return PoolCursor(self, self._cursor_class)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_val:
-            logger.error(exc_tb, exc_info=True)
-            for conn in self:
-                conn.rollback()
-        else:
-            for conn in self:
-                conn.commit()
-
-        self.close()
 
     def __del__(self):
         self.close()
@@ -135,16 +115,39 @@ class MySQLConnectionPool(object):
     def free_size(self):
         return self._pool_container.free_size
 
-    def cursor(self, use_dict_cursor=True):
-        cursor_class = DictCursor if use_dict_cursor else self._cursor_class
-        return PoolCursor(self.borrow_connection(), cursor_class)
+    @contextlib.contextmanager
+    def cursor(self, cursor=None):
+        """Shortcut to get a cursor object from a free connection.
+        It's not that efficient to get cursor object in this way for
+        too many times.
+        """
+        with self.connection() as conn:
+            assert isinstance(conn, Connection)
+            old_value = conn.get_autocommit()
+            conn.autocommit(True)
+            cursor = conn.cursor(cursor)
+
+            try:
+                yield cursor
+            except Exception as err:
+                conn.rollback()
+                logger.error(err, exc_info=True)
+            finally:
+                conn.autocommit(old_value)
+                cursor.close()
 
     @contextlib.contextmanager
-    def connection(self):
+    def connection(self, autocommit=False):
         conn = self.borrow_connection()
+        assert isinstance(conn, Connection)
+        old_value = conn.get_autocommit()
+        conn.autocommit(autocommit)
         try:
             yield conn
+        except Exception as err:
+            logger.error(err, exc_info=True)
         finally:
+            conn.autocommit(old_value)
             self.return_connection(conn)
 
     def connect(self):
@@ -245,9 +248,11 @@ class MySQLConnectionPool(object):
             try:
                 self._pool_container.add(conn_item)
             except PoolIsFullException:
-                logger.debug('[{}] Connection pool is full now'.format(self.pool_name))
+                logger.debug(
+                    '[{}] Connection pool is full now'.format(self.pool_name))
                 if self.pool_size > self._pool_resize_boundary:
-                    raise PoolBoundaryExceedsError('Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
+                    raise PoolBoundaryExceedsError(
+                        'Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
                 else:
                     break
 
@@ -264,11 +269,11 @@ class MySQLConnectionPool(object):
     def _create_connection(self):
         """Create a pymysql connection object
         """
-        conn = Connection(self._host,
-                          self._user,
-                          self._password,
-                          self._database,
-                          self._port,
+        conn = Connection(host=self._host,
+                          user=self._user,
+                          password=self._password,
+                          database=self._database,
+                          port=self._port,
                           charset=self._charset,
                           cursorclass=self._cursor_class,
                           **self._other_kwargs)
