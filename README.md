@@ -1,6 +1,6 @@
 # MySQL 数据库连接池组件
 
-[pymysqlpool]() 是数据库工具包中新成员，目的是能提供一个实用的数据库连接池中间件，从而避免在应用中频繁地创建和释放数据库连接资源。
+[pymysqlpool](https://github.com/ChrisLeeGit/pymysqlpool) 是数据库工具包中新成员，目的是能提供一个实用的数据库连接池中间件，从而避免在应用中频繁地创建和释放数据库连接资源。
 
 # 功能
 
@@ -122,11 +122,15 @@
     conn_pool.return_connection(connection)
     ```
 
-1. 更多测试请移步 [test_example.py]()。
+1. 更多测试请移步 [test_example.py](https://github.com/ChrisLeeGit/pymysqlpool/blob/master/tests/test_example.py)。
 
 # 依赖
 1. `pymysql`：将依赖该工具包完成数据库的连接等操作；
 1. `pandas`：测试时使用了 pandas。
+
+# 安装
+
+下载源码后，使用 `pip` 安装即可：`pip3 setup.py install`，注意需要使用 Python3 环境。
 
 # 日志
 
