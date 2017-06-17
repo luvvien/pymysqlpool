@@ -80,12 +80,12 @@ class PoolCursor(object):
                 logger.debug(
                     '[{}][execute_many] sql: "{}..."'.format(self._conn_pool.pool_name, cursor.mogrify(sql, args[0])))
                 result = cursor.executemany(sql, args)
-
-            self.connection.commit()
-            return result, result + cursor.lastrowid - 1
         except Exception as err:
             logger.error(err, exc_info=True)
             self.connection.rollback()
+        else:
+            self.connection.commit()
+            return result, result + cursor.lastrowid - 1
 
     def query(self, sql, args=None):
         """Return a generator for lazy loading"""

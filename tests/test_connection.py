@@ -14,29 +14,29 @@ import threading
 
 import random
 
-from pymysqlpool import ConnectionPoolFactory
+from pymysqlpool import create_connection_pool
 
 logging.basicConfig(format='[%(asctime)s][%(name)s][%(module)s.%(lineno)d][%(levelname)s] %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
                     level=logging.DEBUG)
 
 config = {
-    'pool_name': 'yunos_new',
+    'pool_name': 'test',
     'host': 'localhost',
     'port': 3306,
     'user': 'root',
     'password': 'chris',
-    'database': 'yunos_new',
+    'database': 'test',
     # 'pool_resize_boundary': 30,
     # 'wait_timeout': 120,
-    # 'enable_auto_resize': True,
+    'enable_auto_resize': True,
     # 'max_pool_size': 10
 }
 
 
 def conn_pool():
     # pool = MySQLConnectionPool(**config)
-    pool = ConnectionPoolFactory(**config)
+    pool = create_connection_pool(**config)
     pool.connect()
     print(pool)
     return pool
@@ -87,7 +87,12 @@ def test_truncate():
 
 def test_with_multi_threading():
     test_truncate()
-    threads = [threading.Thread(target=test_insert_one) for _ in range(1000)]
+
+    def task(n):
+        for _ in range(n):
+            test_insert_one()
+
+    threads = [threading.Thread(target=task, args=(1000, )) for _ in range(100)]
     for t in threads:
         t.start()
 
@@ -111,7 +116,7 @@ def test_borrow_return_connections():
 
 def test_single_thread_insert():
     test_truncate()
-    for _ in range(1000):
+    for _ in range(5000):
         test_insert_one()
 
     test_query()
@@ -129,12 +134,12 @@ if __name__ == '__main__':
     import time
 
     start = time.time()
-    # test_insert_many()
-    # test_query()
-    # test_insert_one()
-    # test_query_with_pandas()
-    # test_with_multi_threading()
+    test_insert_many()
+    test_query()
+    test_insert_one()
+    test_query_with_pandas()
+    test_with_multi_threading()
     test_single_thread_insert()
-    # test_borrow_connections()
-    # test_borrow_return_connections()
+    test_borrow_connections()
+    test_borrow_return_connections()
     print('Time consuming is {}'.format(time.time() - start))

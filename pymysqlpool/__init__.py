@@ -1,10 +1,11 @@
+__all__ = ['create_connection_pool']
+
+
 _instances = {}
 
-__all__ = ['ConnectionPoolFactory', 'Connect']
 
-
-def ConnectionPoolFactory(*args, **kwargs):
-    """Connection pool factory class, singleton instance factory
+def create_connection_pool(*args, **kwargs):
+    """Connection pool factory function, singleton instance factory
     If you want a single connection pool, call this factory function.
     """
     try:
@@ -18,4 +19,4 @@ def ConnectionPoolFactory(*args, **kwargs):
     return _instances[pool_name]
 
 
-Connect = ConnectionPoolFactory
+

@@ -46,7 +46,7 @@ new_connection => [connection pool] => old_connection
 1. 常规用法：
 
     ```python
-    from pymysqlpool import MySQLConnectionPool
+    from pymysqlpool.connection import MySQLConnectionPool
     
     config = {
         'pool_name': 'test',
@@ -76,32 +76,42 @@ new_connection => [connection pool] => old_connection
     cursor.close()
     ```
 
-1. 直接使用 `pool_connection`，可以直接访问一个 `pymysql.Connection` 对象：
+1. 直接使用 `connection`，可以直接访问一个 `pymysql.Connection` 对象：
 
-```python
-import pandas as pd
-from pymysqlpool import MySQLConnectionPool
-    
-config = {
-    'pool_name': 'test',
-    'host': 'localhost',
-    'port': 3306,
-    'user': 'root',
-    'password': 'root',
-    'database': 'test'
-}
-    
-conn_pool = MySQLConnectionPool(**config)
-conn_pool.connect()
 
-with conn_pool.pool_connection() as conn:
+    ```python
+    import pandas as pd
+    from pymysqlpool.connection import MySQLConnectionPool
+
+    config = {
+        'pool_name': 'test',
+        'host': 'localhost',
+        'port': 3306,
+        'user': 'root',
+        'password': 'root',
+        'database': 'test'
+    }
+
+    conn_pool = MySQLConnectionPool(**config)
+    conn_pool.connect()
+
+    with conn_pool.connection() as conn:
+        pd.read_sql('SELECT * FROM user', conn)
+
+    # 或者
+    connection = conn_pool.borrow_connection()
     pd.read_sql('SELECT * FROM user', conn)
-    
-# 或者
-connection = conn_pool.borrow_connection()
-pd.read_sql('SELECT * FROM user', conn)
-conn_pool.return_connection(connection)
-```
+    conn_pool.return_connection(connection)
+    ```
+
+1. 使用连接池工厂创建单例连接池对象：
+
+
+    ```
+    from pymysqlpool import create_connection_pool
+    pool = create_connection_pool(**config)
+    pool.connect()
+    ```
 
 # 性能测试
 
@@ -112,6 +122,9 @@ conn_pool.return_connection(connection)
 1. `pymysql`：将依赖该工具包完成数据库的连接等操作。
 
 # 日志
+## 2017.06.17 周六
+1. 更新连接池工厂函数，替换不正确的命名方式；
+1. 添加新的测试和示例。
 
 ## 2017.06.16 周五
 1. 完成一个池管理器，使用 FIFO 队列模式管理池中的资源；
