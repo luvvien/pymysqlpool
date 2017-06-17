@@ -137,7 +137,7 @@ class MySQLConnectionPool(object):
 
     def cursor(self, use_dict_cursor=True):
         cursor_class = DictCursor if use_dict_cursor else self._cursor_class
-        return PoolCursor(self, cursor_class)
+        return PoolCursor(self.borrow_connection(), cursor_class)
 
     @contextlib.contextmanager
     def connection(self):
