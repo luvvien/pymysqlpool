@@ -223,10 +223,12 @@ class MySQLConnectionPool(object):
             # check if the connection is alive or not
             conn_item.ping(reconnect=True)
             return conn_item
+        # return self._create_connection()
 
     def return_connection(self, conn_item):
         """Return a connection to the pool"""
         return self._pool_container.return_(conn_item)
+        # conn_item.close()
 
     def _extend_connection_pool(self):
         """

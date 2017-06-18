@@ -147,7 +147,7 @@ if __name__ == '__main__':
     test_pool_cursor()
     test_pool_connection()
     # test_with_pandas()
-    test_with_single_thread(1, 10000, explicit_conn=True)
-    test_with_multi_threads(20, 1000, explicit_conn=True)
+    test_with_single_thread(1, 10000, False)
+    test_with_multi_threads(10, 1000, explicit_conn=True)
     elapsed = time.perf_counter() - start
     print('Elapsed time is: "{}"'.format(elapsed))
