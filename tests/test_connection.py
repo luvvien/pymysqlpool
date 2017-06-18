@@ -38,7 +38,7 @@ config = {
 def conn_pool():
     # pool = MySQLConnectionPool(**config)
     pool = ConnectionPool(**config)
-    pool.connect()
+    # pool.connect()
     # print(pool)
     return pool
 

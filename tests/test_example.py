@@ -30,7 +30,7 @@ config = {
 def connection_pool():
     # Return a connection pool instance
     pool = ConnectionPool(**config)
-    pool.connect()
+    # pool.connect()
     return pool
 
 

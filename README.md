@@ -66,7 +66,6 @@
     def connection_pool():
         # Return a connection pool instance
         pool = ConnectionPool(**config)
-        pool.connect()
         return pool
 
     # 直接访问并获取一个 cursor 对象，自动 commit 模式会在这种方式下启用
@@ -116,7 +115,6 @@
     def connection_pool():
         # Return a connection pool instance
         pool = ConnectionPool(**config)
-        pool.connect()
         return pool
 
     with connection_pool().connection() as conn:
