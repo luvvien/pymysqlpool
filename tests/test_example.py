@@ -79,6 +79,18 @@ def delete_users():
         cursor.execute('TRUNCATE user')
 
 
+def add_users(users, conn):
+    def execute(c):
+        c.cursor().executemany('INSERT INTO user (name, age) VALUES (%s, %s)', users)
+        c.commit()
+
+    if conn:
+        execute(conn)
+        return
+    with connection_pool().connection() as conn:
+        execute(conn)
+
+
 def add_user(user, conn=None):
     def execute(c):
         c.cursor().execute('INSERT INTO user (name, age) VALUES (%s, %s)', user)
@@ -106,7 +118,7 @@ def random_user():
 
 
 def worker(id_, batch_size=1, explicit_conn=True):
-    # print('[{}] Worker started...'.format(id_))
+    print('[{}] Worker started...'.format(id_))
 
     def do(conn=None):
         for _ in range(batch_size):
@@ -119,24 +131,46 @@ def worker(id_, batch_size=1, explicit_conn=True):
     with connection_pool().connection() as c:
         do(c)
 
+    print('[{}] Worker finished...'.format(id_))
 
-def test_with_single_thread(batch_number, batch_size, explicit_conn=False):
+
+def bulk_worker(id_, batch_size=1, explicit_conn=True):
+    print('[{}] Bulk worker started...'.format(id_))
+
+    def do(conn=None):
+        add_users([random_user() for _ in range(batch_size)], conn)
+        time.sleep(3)
+
+    if not explicit_conn:
+        do()
+        return
+
+    with connection_pool().connection() as c:
+        do(c)
+
+    print('[{}] Worker finished...'.format(id_))
+
+
+def test_with_single_thread(batch_number, batch_size, explicit_conn=False, bulk_insert=False):
     delete_users()
+    wk = worker if not bulk_insert else bulk_worker
     for i in range(batch_number):
-        worker(i, batch_size, explicit_conn)
+        wk(i, batch_size, explicit_conn)
     list_users()
 
 
-def test_with_multi_threads(batch_number=1, batch_size=1000, explicit_conn=False):
+def test_with_multi_threads(batch_number=1, batch_size=1000, explicit_conn=False, bulk_insert=False):
     delete_users()
-    threads = [threading.Thread(target=worker, args=(i, batch_size, explicit_conn)) for i in
-               range(batch_number)]
-    for t in threads:
+
+    wk = worker if not bulk_insert else bulk_worker
+
+    threads = []
+    for i in range(batch_number):
+        t = threading.Thread(target=wk, args=(i, batch_size, explicit_conn))
+        threads.append(t)
         t.start()
 
-    for t in threads:
-        t.join()
-
+    [t.join() for t in threads]
     list_users()
 
 
@@ -147,7 +181,7 @@ if __name__ == '__main__':
     test_pool_cursor()
     test_pool_connection()
     # test_with_pandas()
-    test_with_single_thread(1, 10000, False)
-    test_with_multi_threads(10, 1000, explicit_conn=True)
+    test_with_single_thread(2, 200000, True, bulk_insert=True)
+    test_with_multi_threads(2, 200000, True, bulk_insert=True)
     elapsed = time.perf_counter() - start
     print('Elapsed time is: "{}"'.format(elapsed))
