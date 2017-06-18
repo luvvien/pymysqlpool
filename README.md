@@ -45,7 +45,8 @@
 - pool_resize_boundary: 该配置为连接池最终可以增加的上上限大小，即时扩展也不可超过该值；
 - auto_resize_scale: 自动扩展 `max_pool_size` 的增益，默认为 1.5 倍扩展；
 - wait_timeout: 在排队等候连接对象时，最多等待多久，当超时时连接池尝试自动扩展当前连接数；
-- kwargs: 其他配置参数将会在创建连接对象时传递给 `pymysql.Connection`
+- defer_connect_pool: 是否延迟连接到连接池，当该值为 True 时，需要显示调用 `pool.connect` 进行连接；
+- kwargs: 其他配置参数将会在创建连接对象时传递给 `pymysql.Connection`。
 
 # 使用示例
 
