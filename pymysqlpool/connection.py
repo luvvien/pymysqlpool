@@ -10,10 +10,9 @@ import logging
 import threading
 import contextlib
 
-from pymysql import Connection
+from pymysql.connections import Connection
 from pymysql.cursors import DictCursor, Cursor
 
-from pymysqlpool.cursor import PoolCursor
 from pymysqlpool.pool import PoolContainer, PoolIsFullException, PoolIsEmptyException
 
 __version__ = '0.1'
@@ -21,7 +20,7 @@ __author__ = 'Chris'
 
 logger = logging.getLogger('pymysqlpool')
 
-__all__ = ['NoFreeConnectionFoundError', 'MySQLConnectionPool']
+__all__ = ['MySQLConnectionPool']
 
 
 class NoFreeConnectionFoundError(Exception):
@@ -38,18 +37,13 @@ class MySQLConnectionPool(object):
 
     Typical usage are as follows:
     Typical usage:
-        >>> pool = MySQLConnectionPool('test_pool', 'localhost', 'username', 'password', 'database', max_pool_size=10)
-        >>> with pool.cursor() as cursor:
-        >>>     cursor.execute_one('INSERT INTO user (name, password) VALUES (%s, %s)', ('chris', 'password'))
-        >>>     cursor.execute_many('INSERT INTO user (name, password) VALUES (%s, %s)', [('chris', 'password'), ('chris', 'password')])
-        >>>     print(list(cursor.query('SELECT * FROM user')))
     """
 
     def __init__(self, pool_name, host=None, user=None, password="", database=None, port=3306,
                  charset='utf8', use_dict_cursor=True, max_pool_size=16,
                  step_size=2, enable_auto_resize=False, auto_resize_scale=1.5,
                  pool_resize_boundary=48,
-                 wait_timeout=60, **kwargs):
+                 wait_timeout=60, defer_connect_pool=False, **kwargs):
         """
         Initialize the connection pool.
 
@@ -68,6 +62,7 @@ class MySQLConnectionPool(object):
         :param auto_resize_scale: `max_pool_size * auto_resize_scale` is the new max_pool_size.
                                 The max_pool_size will be changed dynamically only if `enable_auto_resize` is True.
         :param wait_timeout: wait several seconds each time when we try to get a free connection
+        :param defer_connect_pool: don't connect to pool on construction, wait for explicit call. Default is False.
         :param kwargs: other keyword arguments to be passed to `pymysql.Connection`
         """
         # config for a database connection
@@ -87,7 +82,8 @@ class MySQLConnectionPool(object):
         self._enable_auto_resize = enable_auto_resize
         self._pool_resize_boundary = pool_resize_boundary
         if auto_resize_scale < 1:
-            raise ValueError("Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
+            raise ValueError(
+                "Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
 
         self._auto_resize_scale = int(round(auto_resize_scale, 0))
         self.wait_timeout = wait_timeout
@@ -97,24 +93,12 @@ class MySQLConnectionPool(object):
         self.__is_killed = False
         self.__is_connected = False
 
+        if not defer_connect_pool:
+            self.connect()
+
     def __repr__(self):
         return '<MySQLConnectionPool object at 0x{:0x}, ' \
                'name={!r}, size={!r}>'.format(id(self), self.pool_name, (self.pool_size, self.free_size))
-
-    def __enter__(self):
-        self.connect()
-        return PoolCursor(self, self._cursor_class)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_val:
-            logger.error(exc_tb, exc_info=True)
-            for conn in self:
-                conn.rollback()
-        else:
-            for conn in self:
-                conn.commit()
-
-        self.close()
 
     def __del__(self):
         self.close()
@@ -135,16 +119,39 @@ class MySQLConnectionPool(object):
     def free_size(self):
         return self._pool_container.free_size
 
-    def cursor(self, use_dict_cursor=True):
-        cursor_class = DictCursor if use_dict_cursor else self._cursor_class
-        return PoolCursor(self, cursor_class)
+    @contextlib.contextmanager
+    def cursor(self, cursor=None):
+        """Shortcut to get a cursor object from a free connection.
+        It's not that efficient to get cursor object in this way for
+        too many times.
+        """
+        with self.connection() as conn:
+            assert isinstance(conn, Connection)
+            old_value = conn.get_autocommit()
+            conn.autocommit(True)
+            cursor = conn.cursor(cursor)
+
+            try:
+                yield cursor
+            except Exception as err:
+                conn.rollback()
+                logger.error(err, exc_info=True)
+            finally:
+                conn.autocommit(old_value)
+                cursor.close()
 
     @contextlib.contextmanager
-    def connection(self):
+    def connection(self, autocommit=False):
         conn = self.borrow_connection()
+        assert isinstance(conn, Connection)
+        old_value = conn.get_autocommit()
+        conn.autocommit(autocommit)
         try:
             yield conn
+        except Exception as err:
+            logger.error(err, exc_info=True)
         finally:
+            conn.autocommit(old_value)
             self.return_connection(conn)
 
     def connect(self):
@@ -184,10 +191,10 @@ class MySQLConnectionPool(object):
         """
         Get a free connection item from current pool
         """
-        conn_item = self._borrow(block)
-        if conn_item:
+        connection = self._borrow(block)
+        if connection:
             # logger.debug('[{}] borrowed a connection from the connection pool'.format(self.pool_name))
-            return conn_item
+            return connection
 
         if self.pool_size < self._max_pool_size:
             self._extend_connection_pool()
@@ -213,17 +220,19 @@ class MySQLConnectionPool(object):
 
     def _borrow(self, block=True):
         try:
-            conn_item = self._pool_container.get(block, self.wait_timeout)
+            connection = self._pool_container.get(block, self.wait_timeout)
         except PoolIsEmptyException:
             return None
         else:
             # check if the connection is alive or not
-            conn_item.ping(reconnect=True)
-            return conn_item
+            connection.ping(reconnect=True)
+            return connection
+            # return self._create_connection()
 
-    def return_connection(self, conn_item):
+    def return_connection(self, connection):
         """Return a connection to the pool"""
-        return self._pool_container.return_(conn_item)
+        return self._pool_container.return_(connection)
+        # connection.close()
 
     def _extend_connection_pool(self):
         """
@@ -236,18 +245,20 @@ class MySQLConnectionPool(object):
                                              self._max_pool_size))
         for i in range(self._step_size):
             try:
-                conn_item = self._create_connection()
-                conn_item.connect()
+                connection = self._create_connection()
+                # connection.connect()
             except Exception as err:
                 logger.error(err)
                 continue
 
             try:
-                self._pool_container.add(conn_item)
+                self._pool_container.add(connection)
             except PoolIsFullException:
-                logger.debug('[{}] Connection pool is full now'.format(self.pool_name))
+                logger.debug(
+                    '[{}] Connection pool is full now'.format(self.pool_name))
                 if self.pool_size > self._pool_resize_boundary:
-                    raise PoolBoundaryExceedsError('Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
+                    raise PoolBoundaryExceedsError(
+                        'Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
                 else:
                     break
 
@@ -255,21 +266,20 @@ class MySQLConnectionPool(object):
         """
         Release all the connections in the pool
         """
-        for conn_item in self:
+        for connection in self:
             try:
-                conn_item.close()
+                connection.close()
             except Exception as err:
                 _ = err
 
     def _create_connection(self):
         """Create a pymysql connection object
         """
-        conn = Connection(self._host,
-                          self._user,
-                          self._password,
-                          self._database,
-                          self._port,
+        return Connection(host=self._host,
+                          user=self._user,
+                          password=self._password,
+                          database=self._database,
+                          port=self._port,
                           charset=self._charset,
                           cursorclass=self._cursor_class,
                           **self._other_kwargs)
-        return conn
