@@ -28,8 +28,6 @@ config = {
     'password': 'chris',
     'database': 'test',
     'pool_resize_boundary': 50,
-    'step_size': 10,
-    # 'wait_timeout': 120,
     'enable_auto_resize': True,
     # 'max_pool_size': 10
 }

@@ -38,11 +38,11 @@ class PoolContainer(object):
         self._free_items = Queue()
         # self._pool_items = list()
         self._pool_items = set()
+        self._max_pool_size = 0
         self.max_pool_size = max_pool_size
 
     def __repr__(self):
-        return '<{0.__class__.__name__} size=({0._max_pool_size}, ' \
-               '{0.pool_size}, {0.free_size})>'.format(self)
+        return '<{0.__class__.__name__} {0.size})>'.format(self)
 
     def __iter__(self):
         with self._pool_lock:
@@ -65,7 +65,7 @@ class PoolContainer(object):
         if item in self:
             logger.debug(
                 'Duplicate item found "{}", '
-                'current size is "{}"'.format(item, (self.pool_size, self.free_size, self.max_pool_size)))
+                'current size is "{}"'.format(item, self.size))
             return None
 
         if self.pool_size >= self.max_pool_size:
@@ -77,8 +77,8 @@ class PoolContainer(object):
             self._pool_items.add(item)
 
         logger.debug(
-            'Added a new item "{!r}",'
-            ' current size is "{}"'.format(item, (self.pool_size, self.free_size, self.max_pool_size)))
+            'Add item "{!r}",'
+            ' current size is "{}"'.format(item, self.size))
 
     def return_(self, item):
         """Return a item to the pool. Note that the item to be returned should exist in this pool"""
@@ -91,8 +91,7 @@ class PoolContainer(object):
             return False
 
         self._free_items.put_nowait(item)
-        logger.debug('Returned an item "{!r}", current size is "{}"'.format(item, (
-            self.pool_size, self.free_size, self.max_pool_size)))
+        logger.debug('Return item "{!r}", current size is "{}"'.format(item, self.size))
         return True
 
     def get(self, block=True, wait_timeout=60):
@@ -107,8 +106,22 @@ class PoolContainer(object):
             raise PoolIsEmptyException('Cannot find any available item')
         else:
             logger.debug('Get item "{}",'
-                         ' current size is "{}"'.format(item, (self.pool_size, self.free_size, self.max_pool_size)))
+                         ' current size is "{}"'.format(item, self.size))
             return item
+
+    @property
+    def size(self):
+        # Return a tuple of the pool size in detail
+        return '<max={}, current={}, free={}>'.format(self.max_pool_size, self.pool_size, self.free_size)
+
+    @property
+    def max_pool_size(self):
+        return self._max_pool_size
+
+    @max_pool_size.setter
+    def max_pool_size(self, value):
+        if value > self._max_pool_size:
+            self._max_pool_size = value
 
     @property
     def pool_size(self):

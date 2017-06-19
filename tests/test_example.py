@@ -6,10 +6,13 @@
 # Version: 0.0.1
 # Description: simple test.
 
-import pandas as pd
-import threading
-import random
+import logging
 import string
+import threading
+
+import pandas as pd
+import random
+
 from pymysqlpool import ConnectionPool
 
 config = {
@@ -19,12 +22,13 @@ config = {
     'user': 'root',
     'password': 'chris',
     'database': 'test',
-    'pool_resize_boundary': 50,
-    'step_size': 10,
-    # 'wait_timeout': 120,
-    'enable_auto_resize': True,
-    # 'max_pool_size': 10
+    'pool_resize_boundary': 100,
+    'enable_auto_resize': True
 }
+
+logging.basicConfig(format='[%(asctime)s][%(name)s][%(module)s.%(lineno)d][%(levelname)s] %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S',
+                    level=logging.DEBUG)
 
 
 def connection_pool():
@@ -180,8 +184,8 @@ if __name__ == '__main__':
     start = time.perf_counter()
     test_pool_cursor()
     test_pool_connection()
-    # test_with_pandas()
-    test_with_single_thread(2, 200000, True, bulk_insert=True)
-    test_with_multi_threads(2, 200000, True, bulk_insert=True)
+    test_with_pandas()
+    test_with_multi_threads(2000, 100, True, bulk_insert=True)
+    test_with_single_thread(1, 10, True, bulk_insert=True)
     elapsed = time.perf_counter() - start
     print('Elapsed time is: "{}"'.format(elapsed))

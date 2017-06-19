@@ -34,18 +34,19 @@ class PoolBoundaryExceedsError(Exception):
 class MySQLConnectionPool(object):
     """
     A connection pool manager.
-
-    Typical usage are as follows:
-    Typical usage:
     """
 
     def __init__(self, pool_name, host=None, user=None, password="", database=None, port=3306,
                  charset='utf8', use_dict_cursor=True, max_pool_size=16,
-                 step_size=2, enable_auto_resize=False, auto_resize_scale=1.5,
+                 enable_auto_resize=True, auto_resize_scale=1.5,
                  pool_resize_boundary=48,
-                 wait_timeout=60, defer_connect_pool=False, **kwargs):
+                 defer_connect_pool=False, **kwargs):
         """
         Initialize the connection pool.
+
+        Update: 2017.06.19
+            1. remove `step_size` argument
+            2. remove `wait_timeout` argument
 
         :param pool_name: a unique pool_name for this connection pool.
         :param host: host to your database server
@@ -56,12 +57,10 @@ class MySQLConnectionPool(object):
         :param charset: default charset is 'utf8'
         :param use_dict_cursor: whether to use a dict cursor instead of a default one
         :param max_pool_size: maximum connection pool size (max pool size can be changed dynamically)
-        :param step_size: increase `step_size` connections when call the extend method
-        :param enable_auto_resize: if set to True, the max_pool_size will be changed
+        :param enable_auto_resize: if set to True, the max_pool_size will be changed dynamically
         :param pool_resize_boundary: !!this is related to the max connections of your mysql server!!
         :param auto_resize_scale: `max_pool_size * auto_resize_scale` is the new max_pool_size.
                                 The max_pool_size will be changed dynamically only if `enable_auto_resize` is True.
-        :param wait_timeout: wait several seconds each time when we try to get a free connection
         :param defer_connect_pool: don't connect to pool on construction, wait for explicit call. Default is False.
         :param kwargs: other keyword arguments to be passed to `pymysql.Connection`
         """
@@ -78,7 +77,7 @@ class MySQLConnectionPool(object):
         # config for the connection pool
         self._pool_name = pool_name
         self._max_pool_size = max_pool_size if max_pool_size < pool_resize_boundary else pool_resize_boundary
-        self._step_size = step_size
+        # self._step_size = step_size
         self._enable_auto_resize = enable_auto_resize
         self._pool_resize_boundary = pool_resize_boundary
         if auto_resize_scale < 1:
@@ -86,7 +85,7 @@ class MySQLConnectionPool(object):
                 "Invalid scale {}, must be bigger than 1".format(auto_resize_scale))
 
         self._auto_resize_scale = int(round(auto_resize_scale, 0))
-        self.wait_timeout = wait_timeout
+        # self.wait_timeout = wait_timeout
         self._pool_container = PoolContainer(self._max_pool_size)
 
         self.__safe_lock = threading.RLock()
@@ -118,6 +117,13 @@ class MySQLConnectionPool(object):
     @property
     def free_size(self):
         return self._pool_container.free_size
+
+    @property
+    def size(self):
+        return '<boundary={}, max={}, current={}, free={}>'.format(self._pool_resize_boundary,
+                                                                   self._max_pool_size,
+                                                                   self.pool_size,
+                                                                   self.free_size)
 
     @contextlib.contextmanager
     def cursor(self, cursor=None):
@@ -171,7 +177,7 @@ class MySQLConnectionPool(object):
             with self.__safe_lock:
                 self.__is_connected = True
 
-            self._extend_connection_pool()
+            self._adjust_connection_pool()
         finally:
             test_conn.close()
 
@@ -191,80 +197,66 @@ class MySQLConnectionPool(object):
         with self.__safe_lock:
             self.__is_killed = True
 
-    def borrow_connection(self, block=False):
+    def borrow_connection(self):
         """
-        Get a free connection item from current pool
+        Get a free connection item from current pool. It's a little confused here, but it works as expected now.
         """
-        connection = self._borrow(block)
-        if connection:
-            # logger.debug('[{}] borrowed a connection from the connection pool'.format(self.pool_name))
-            return connection
+        block = False
 
-        if self.pool_size < self._max_pool_size:
-            self._extend_connection_pool()
-            return self.borrow_connection(True)
+        while True:
+            conn = self._borrow(block)
+            if conn is None:
+                block = not self._adjust_connection_pool()
+            else:
+                return conn
 
-        if self._enable_auto_resize is False:
-            # raise NoFreeConnectionFoundError('[{}] Cannot find a free connection'.format(self.pool_name))
-            return self.borrow_connection(True)
-
-        # Wait until a new free connection is found
-        if self.pool_size >= self._pool_resize_boundary:
-            return self.borrow_connection(True)
-
-        # Resize the pool automatically
-        with self.__safe_lock:
-            self._max_pool_size *= self._auto_resize_scale
-            self._max_pool_size = self._max_pool_size if self._max_pool_size < self._pool_resize_boundary else \
-                self._pool_resize_boundary
-
-            self._pool_container.max_pool_size = self._max_pool_size
-            self._extend_connection_pool()
-            return self.borrow_connection(True)
-
-    def _borrow(self, block=True):
+    def _borrow(self, block):
         try:
-            connection = self._pool_container.get(block, self.wait_timeout)
+            connection = self._pool_container.get(block, None)
         except PoolIsEmptyException:
             return None
         else:
             # check if the connection is alive or not
             connection.ping(reconnect=True)
             return connection
-            # return self._create_connection()
 
     def return_connection(self, connection):
         """Return a connection to the pool"""
         return self._pool_container.return_(connection)
-        # connection.close()
 
-    def _extend_connection_pool(self):
+    def _adjust_connection_pool(self):
         """
-        Extend the connection pool, create several connections here.
+        Adjust the connection pool.
         """
         # Create several new connections
-        logger.debug('[{}] Extend connection pool, '
-                     'current size is {}, '
-                     'max size is {}'.format(self.pool_name, (self.pool_size, self._max_pool_size),
-                                             self._max_pool_size))
-        for i in range(self._step_size):
-            try:
-                connection = self._create_connection()
-                # connection.connect()
-            except Exception as err:
-                logger.error(err)
-                continue
+        logger.debug('[{}] Adjust connection pool, '
+                     'current size is "{}"'.format(self.pool_name, self.size))
 
+        if self.pool_size >= self._max_pool_size:
+            if self._enable_auto_resize:
+                self._adjust_max_pool_size()
+
+        try:
+            connection = self._create_connection()
+        except Exception as err:
+            logger.error(err)
+            return False
+        else:
             try:
                 self._pool_container.add(connection)
             except PoolIsFullException:
-                logger.debug(
-                    '[{}] Connection pool is full now'.format(self.pool_name))
-                if self.pool_size > self._pool_resize_boundary:
-                    raise PoolBoundaryExceedsError(
-                        'Pool boundary exceeds: {}'.format(self._pool_resize_boundary))
-                else:
-                    break
+                # logger.debug('[{}] Connection pool is full now'.format(self.pool_name))
+                return False
+            else:
+                return True
+
+    def _adjust_max_pool_size(self):
+        with self.__safe_lock:
+            self._max_pool_size *= self._auto_resize_scale
+            if self._max_pool_size > self._pool_resize_boundary:
+                self._max_pool_size = self._pool_resize_boundary
+            logger.debug('[{}] Max pool size adjusted to {}'.format(self.pool_name, self._max_pool_size))
+            self._pool_container.max_pool_size = self._max_pool_size
 
     def _free(self):
         """
