@@ -177,7 +177,11 @@ class MySQLConnectionPool(object):
 
     def close(self):
         """Close this connection pool"""
-        logger.info('[{}] Close connection pool'.format(self.pool_name))
+        try:
+            logger.info('[{}] Close connection pool'.format(self.pool_name))
+        except Exception:
+            pass
+
         with self.__safe_lock:
             if self.__is_killed is True:
                 return True
