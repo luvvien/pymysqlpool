@@ -20,7 +20,7 @@ __author__ = 'Chris'
 
 logger = logging.getLogger('pymysqlpool')
 
-__all__ = ['NoFreeConnectionFoundError', 'MySQLConnectionPool']
+__all__ = ['MySQLConnectionPool']
 
 
 class NoFreeConnectionFoundError(Exception):
@@ -62,7 +62,7 @@ class MySQLConnectionPool(object):
         :param auto_resize_scale: `max_pool_size * auto_resize_scale` is the new max_pool_size.
                                 The max_pool_size will be changed dynamically only if `enable_auto_resize` is True.
         :param wait_timeout: wait several seconds each time when we try to get a free connection
-        :param defer_connect_pool: don't connect to pool on contruction, wait for explicit call. Default is False.
+        :param defer_connect_pool: don't connect to pool on construction, wait for explicit call. Default is False.
         :param kwargs: other keyword arguments to be passed to `pymysql.Connection`
         """
         # config for a database connection
