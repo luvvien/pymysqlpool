@@ -22,7 +22,7 @@ config = {
     'user': 'root',
     'password': 'chris',
     'database': 'test',
-    'pool_resize_boundary': 100,
+    'pool_resize_boundary': 500,
     'enable_auto_resize': True
 }
 
