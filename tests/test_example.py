@@ -6,6 +6,7 @@
 # Version: 0.0.1
 # Description: simple test.
 
+
 import logging
 import string
 import threading
@@ -22,8 +23,9 @@ config = {
     'user': 'root',
     'password': 'chris',
     'database': 'test',
-    'pool_resize_boundary': 500,
-    'enable_auto_resize': True
+    'pool_resize_boundary': 50,
+    'enable_auto_resize': True,
+    # 'max_pool_size': 10
 }
 
 logging.basicConfig(format='[%(asctime)s][%(name)s][%(module)s.%(lineno)d][%(levelname)s] %(message)s',
@@ -184,6 +186,7 @@ if __name__ == '__main__':
     start = time.perf_counter()
     test_pool_cursor()
     test_pool_connection()
+
     test_with_pandas()
     test_with_multi_threads(2000, 100, True, bulk_insert=True)
     test_with_single_thread(1, 10, True, bulk_insert=True)

@@ -41,6 +41,7 @@ class MySQLConnectionPool(object):
                  enable_auto_resize=True, auto_resize_scale=1.5,
                  pool_resize_boundary=48,
                  defer_connect_pool=False, **kwargs):
+
         """
         Initialize the connection pool.
 
