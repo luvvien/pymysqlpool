@@ -188,7 +188,7 @@ if __name__ == '__main__':
     test_pool_connection()
 
     test_with_pandas()
-    test_with_multi_threads(2000, 100, True, bulk_insert=True)
+    test_with_multi_threads(20, 10, True, bulk_insert=True)
     test_with_single_thread(1, 10, True, bulk_insert=True)
     elapsed = time.perf_counter() - start
     print('Elapsed time is: "{}"'.format(elapsed))

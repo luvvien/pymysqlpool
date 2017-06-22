@@ -140,7 +140,7 @@ class MySQLConnectionPool(object):
                 yield cursor
             except Exception as err:
                 conn.rollback()
-                logger.error(err, exc_info=True)
+                raise err
             finally:
                 cursor.close()
 
@@ -153,7 +153,8 @@ class MySQLConnectionPool(object):
         try:
             yield conn
         except Exception as err:
-            logger.error(err, exc_info=True)
+            # logger.error(err, exc_info=True)
+            raise err
         finally:
             conn.autocommit(old_value)
             self.return_connection(conn)
