@@ -132,10 +132,8 @@ class MySQLConnectionPool(object):
         It's not that efficient to get cursor object in this way for
         too many times.
         """
-        with self.connection() as conn:
+        with self.connection(autocommit=True) as conn:
             assert isinstance(conn, Connection)
-            old_value = conn.get_autocommit()
-            conn.autocommit(True)
             cursor = conn.cursor(cursor)
 
             try:
@@ -144,7 +142,6 @@ class MySQLConnectionPool(object):
                 conn.rollback()
                 logger.error(err, exc_info=True)
             finally:
-                conn.autocommit(old_value)
                 cursor.close()
 
     @contextlib.contextmanager
