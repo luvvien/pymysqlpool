@@ -97,8 +97,8 @@ class MySQLConnectionPool(object):
             self.connect()
 
     def __repr__(self):
-        return '<MySQLConnectionPool object at 0x{:0x}, ' \
-               'name={!r}, size={!r}>'.format(id(self), self.pool_name, (self.pool_size, self.free_size))
+        return '<MySQLConnectionPool ' \
+               'name={!r}, size={!r}>'.format(self.pool_name, self.size)
 
     def __del__(self):
         self.close()
@@ -165,7 +165,7 @@ class MySQLConnectionPool(object):
         if self.__is_connected:
             return
 
-        logger.info('[{}] Connect to connection pool'.format(self.pool_name))
+        logger.info('[{}] Connect to connection pool'.format(self))
 
         test_conn = self._create_connection()
         try:
@@ -183,7 +183,7 @@ class MySQLConnectionPool(object):
     def close(self):
         """Close this connection pool"""
         try:
-            logger.info('[{}] Close connection pool'.format(self.pool_name))
+            logger.info('[{}] Close connection pool'.format(self))
         except Exception:
             pass
 
@@ -229,7 +229,7 @@ class MySQLConnectionPool(object):
         """
         # Create several new connections
         logger.debug('[{}] Adjust connection pool, '
-                     'current size is "{}"'.format(self.pool_name, self.size))
+                     'current size is "{}"'.format(self, self.size))
 
         if self.pool_size >= self._max_pool_size:
             if self._enable_auto_resize:
@@ -254,7 +254,7 @@ class MySQLConnectionPool(object):
             self._max_pool_size *= self._auto_resize_scale
             if self._max_pool_size > self._pool_resize_boundary:
                 self._max_pool_size = self._pool_resize_boundary
-            logger.debug('[{}] Max pool size adjusted to {}'.format(self.pool_name, self._max_pool_size))
+            logger.debug('[{}] Max pool size adjusted to {}'.format(self, self._max_pool_size))
             self._pool_container.max_pool_size = self._max_pool_size
 
     def _free(self):
